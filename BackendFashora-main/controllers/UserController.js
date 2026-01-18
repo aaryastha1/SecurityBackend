@@ -258,11 +258,14 @@ exports.updateProfile = async (req, res) => {
       }
 
       const hashed = await bcrypt.hash(req.body.password, 10);
+      const bcrypt = require("bcrypt");
+
       user.password = hashed;
       user.recentPasswords = [hashed, ...user.recentPasswords.slice(0, 2)];
       user.passwordLastChanged = Date.now();
     }
 
+    
     const savedUser = await user.save();
 
     return res.status(200).json({
