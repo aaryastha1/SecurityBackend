@@ -161,6 +161,7 @@ const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
+const sendOTP = require("../utils/sendOTP");
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_TIME = 15 * 60 * 1000; // 15 minutes
@@ -175,7 +176,8 @@ function validatePassword(password) {
 exports.registerUser = async (req, res) => {
   const { name, email, phoneNumber, password, role = "normal", captcha } = req.body;
 
-  if (!captcha) return res.status(400).json({ success: false, message: "Captcha is required" });
+  if (!captcha)
+    return res.status(400).json({ success: false, message: "Captcha is required" });
 
   try {
     const secretKey = process.env.RECAPTCHA_SECRET;
@@ -183,23 +185,22 @@ exports.registerUser = async (req, res) => {
       `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${captcha}`
     );
 
-    if (!response.data.success) {
+    if (!response.data.success)
       return res.status(400).json({ success: false, message: "Captcha verification failed" });
-    }
-  } catch {
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ success: false, message: "Captcha verification error" });
   }
 
   if (!name || !email || !phoneNumber || !password)
-    return res.status(400).json({ success: false, message: "Missing fields" });
+    return res.status(400).json({ success: false, message: "Missing required fields" });
 
-  if (!validatePassword(password)) {
+  if (!validatePassword(password))
     return res.status(400).json({
       success: false,
       message:
-        "Password must be at least 8 characters, include uppercase, lowercase, number, and symbol"
+        "Password must be at least 8 characters, include uppercase, lowercase, number, and symbol",
     });
-  }
 
   try {
     const existingUser = await User.findOne({ $or: [{ email }, { phoneNumber }] });
@@ -215,7 +216,7 @@ exports.registerUser = async (req, res) => {
       password: hashedPassword,
       role,
       recentPasswords: [hashedPassword],
-      passwordLastChanged: Date.now()
+      passwordLastChanged: Date.now(),
     });
 
     await newUser.save();
@@ -223,14 +224,15 @@ exports.registerUser = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "User registered successfully",
-      data: { id: newUser._id, name, email, role }
+      data: { id: newUser._id, name, email, role },
     });
-  } catch {
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-// ===== LOGIN (UPDATED WITH LOCKOUT) =====
+// ===== LOGIN =====
 exports.loginUser = async (req, res) => {
   const { email, password, captcha } = req.body;
 
@@ -238,81 +240,117 @@ exports.loginUser = async (req, res) => {
     return res.status(400).json({ success: false, message: "Captcha is required" });
 
   try {
+    // Verify reCAPTCHA
     const secretKey = process.env.RECAPTCHA_SECRET;
     const response = await axios.post(
       `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${captcha}`
     );
     if (!response.data.success)
       return res.status(400).json({ success: false, message: "Captcha verification failed" });
-  } catch {
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ success: false, message: "Captcha verification error" });
   }
 
   if (!email || !password)
-    return res.status(400).json({ success: false, message: "Missing fields" });
+    return res.status(400).json({ success: false, message: "Email and password are required" });
 
   try {
     const user = await User.findOne({ email });
-    if (!user)
-      return res.status(403).json({ success: false, message: "User not found" });
+    if (!user) return res.status(403).json({ success: false, message: "User not found" });
 
-    // 🔒 Check lock status
+    // Check lock status
     if (user.lockUntil && user.lockUntil > Date.now()) {
       const minutes = Math.ceil((user.lockUntil - Date.now()) / 60000);
       return res.status(403).json({
         success: false,
-        message: `Account locked. Try again in ${minutes} minute(s).`
+        message: `Account locked. Try again in ${minutes} minute(s).`,
       });
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
-
     if (!isPasswordValid) {
       user.failedLoginAttempts += 1;
 
       if (user.failedLoginAttempts >= MAX_FAILED_ATTEMPTS) {
         user.lockUntil = Date.now() + LOCK_TIME;
         await user.save();
-
         return res.status(403).json({
           success: false,
-          message: "Account locked for 15 minutes due to multiple failed login attempts"
+          message: "Account locked for 15 minutes due to multiple failed login attempts",
         });
       }
 
       await user.save();
       return res.status(403).json({
         success: false,
-        message: `Invalid credentials. ${MAX_FAILED_ATTEMPTS - user.failedLoginAttempts} attempts left`
+        message: `Invalid credentials. ${MAX_FAILED_ATTEMPTS - user.failedLoginAttempts} attempts left`,
       });
     }
 
-    // ✅ Successful login → reset counters
+    // Password correct → reset counters
     user.failedLoginAttempts = 0;
     user.lockUntil = null;
+
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.otp = otp;
+    user.otpExpiry = Date.now() + 5 * 60 * 1000;
     await user.save();
 
-    // Password expiry
-    const passwordAge = Date.now() - user.passwordLastChanged;
-    const ninetyDays = 90 * 24 * 60 * 60 * 1000;
-    if (passwordAge > ninetyDays)
-      return res.status(403).json({
-        success: false,
-        message: "Password expired. Please change your password."
-      });
+    try {
+      await sendOTP(user.email, otp);
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ success: false, message: "Failed to send OTP. Try again." });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP sent to your email. Enter OTP to complete login.",
+      data: { email: user.email },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// ===== VERIFY OTP =====
+exports.verifyOTP = async (req, res) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp)
+    return res.status(400).json({ success: false, message: "Email and OTP are required" });
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    if (!user.otp || !user.otpExpiry || user.otpExpiry < Date.now()) {
+      return res.status(400).json({ success: false, message: "OTP expired. Please login again." });
+    }
+
+    if (user.otp !== otp) {
+      return res.status(400).json({ success: false, message: "Invalid OTP" });
+    }
+
+    // Clear OTP
+    user.otp = null;
+    user.otpExpiry = null;
+    await user.save();
 
     const payload = { _id: user._id, email: user.email, name: user.name, role: user.role };
-    const token = jwt.sign(payload, process.env.SECRET || "defaultsecret", {
-      expiresIn: "7d"
-    });
+    const token = jwt.sign(payload, process.env.SECRET || "defaultsecret", { expiresIn: "7d" });
 
     return res.status(200).json({
       success: true,
       message: "Login successful",
       data: payload,
-      token
+      token,
     });
-  } catch {
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
@@ -321,67 +359,61 @@ exports.loginUser = async (req, res) => {
 exports.getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select("-password");
-    if (!user)
-      return res.status(404).json({ success: false, message: "User not found" });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
     return res.status(200).json({ success: true, data: user });
-  } catch {
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 // ===== UPDATE PROFILE =====
 exports.updateProfile = async (req, res) => {
   try {
-    const updates = req.body;
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    if (updates.password) {
-      if (!validatePassword(updates.password))
-        return res.status(400).json({
-          success: false,
-          message:
-            "Password must be at least 8 characters, include uppercase, lowercase, number, and symbol"
-        });
+    // Update text fields
+    if (req.body.name) user.name = req.body.name;
+    if (req.body.phoneNumber) user.phoneNumber = req.body.phoneNumber;
 
-      const user = await User.findById(req.user._id);
-      for (const hash of user.recentPasswords || []) {
-        if (await bcrypt.compare(updates.password, hash)) {
-          return res.status(400).json({
-            success: false,
-            message: "Cannot reuse recent passwords"
-          });
-        }
-      }
-
-      updates.password = await bcrypt.hash(updates.password, 10);
-      user.recentPasswords = [updates.password, ...user.recentPasswords.slice(0, 2)];
-      user.passwordLastChanged = Date.now();
-      await user.save();
+    // Update profile image
+    if (req.file) {
+      // Construct full URL dynamically
+      const protocol = req.protocol; // http or https
+      const host = req.get("host");  // localhost:5006
+      user.profileImage = `${protocol}://${host}/uploads/${req.file.filename}`;
     }
 
-    const updatedUser = await User.findByIdAndUpdate(req.user._id, updates, {
-      new: true,
-      runValidators: true
-    }).select("-password");
+    // Password update logic
+    if (req.body.password) {
+      const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+      if (!regex.test(req.body.password)) {
+        return res.status(400).json({ success: false, message: "Invalid Password Format" });
+      }
 
-    const payload = {
-      _id: updatedUser._id,
-      email: updatedUser.email,
-      name: updatedUser.name,
-      role: updatedUser.role
-    };
+      const hashed = await bcrypt.hash(req.body.password, 10);
+      user.password = hashed;
+      user.recentPasswords = [hashed, ...user.recentPasswords.slice(0, 2)];
+      user.passwordLastChanged = Date.now();
+    }
 
-    const newToken = jwt.sign(payload, process.env.SECRET || "defaultsecret", {
-      expiresIn: "7d"
-    });
+    const savedUser = await user.save();
 
     return res.status(200).json({
       success: true,
       message: "Profile updated successfully",
-      data: updatedUser,
-      token: newToken
+      data: {
+        _id: savedUser._id,
+        name: savedUser.name,
+        email: savedUser.email,
+        phoneNumber: savedUser.phoneNumber,
+        profileImage: savedUser.profileImage, // ✅ Full URL
+        role: savedUser.role,
+      },
     });
-  } catch {
+  } catch (err) {
+    console.error("Update Error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };

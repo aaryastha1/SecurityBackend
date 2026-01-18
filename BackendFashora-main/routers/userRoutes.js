@@ -8,7 +8,8 @@ const {
   registerUser,
   loginUser,
   getProfile,
-  updateProfile
+  updateProfile,
+  verifyOTP
 } = require("../controllers/UserController");
 
 const {
@@ -16,6 +17,8 @@ const {
   validateLogin,
   authenticateUser
 } = require("../middlewares/authorizedUser");
+
+const upload = require("../middlewares/fileupload");
 
 // Registration route
 router.post("/register", validateSignup, registerUser);
@@ -27,6 +30,10 @@ router.post("/login", validateLogin, loginUser);
 router.get("/me", authenticateUser, getProfile);
 
 // Update profile (protected)
-router.put("/me", authenticateUser, updateProfile);
+router.put("/me", authenticateUser,  upload.single("profileImage"), updateProfile);
+
+
+router.post("/verify-otp", verifyOTP);
+
 
 module.exports = router;

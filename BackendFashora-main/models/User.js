@@ -27,6 +27,12 @@ const userSchema = new mongoose.Schema({
   role: { type: String, default: "normal" },
   filepath: { type: String },
 
+   // 👤 Profile picture
+  profileImage: {
+    type: String, // store filename or URL
+    default: "",
+  },
+
   // Favorites
   favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
 
