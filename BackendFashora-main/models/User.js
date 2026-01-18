@@ -26,6 +26,8 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: { type: String, default: "normal" },
   filepath: { type: String },
+  csrfToken: { type: String },
+
 
    // 👤 Profile picture
   profileImage: {

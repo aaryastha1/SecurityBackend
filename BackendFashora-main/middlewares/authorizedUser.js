@@ -1,7 +1,13 @@
 const jwt = require("jsonwebtoken");
 const User = require('../models/User');
+const csrf = require("csurf");
 
-// validation middlewares
+// ===== CSRF Protection =====
+const csrfProtection = csrf({
+  cookie: true, // store CSRF token in cookie
+});
+
+// ===== Validation middlewares =====
 const validateSignup = (req, res, next) => {
   const { name, email, phoneNumber, password } = req.body;
   if (!name || !email || !phoneNumber || !password) {
@@ -24,56 +30,61 @@ const validateLogin = (req, res, next) => {
   next();
 };
 
-
-// 🔐 Authenticate logged-in user
+// ===== Authenticate logged-in user =====
 const authenticateUser = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    // 1️⃣ Try cookie first
+    const token = req.cookies?.token;
 
-    if (!authHeader) {
+    // 2️⃣ Fallback to header
+    const authHeader = req.headers.authorization;
+    const bearerToken = authHeader?.split(" ")[1];
+
+    if (!token && !bearerToken) {
       return res.status(403).json({
         success: false,
-        message: "Token required"
+        message: "Authentication required",
       });
     }
 
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.SECRET);
+    const decoded = jwt.verify(token || bearerToken, process.env.SECRET);
 
     const user = await User.findById(decoded._id);
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: "User not found"
+        message: "User not found",
       });
     }
 
     req.user = user; // attach user to request
     next();
   } catch (err) {
+    console.error("Auth Error:", err.message);
     return res.status(401).json({
       success: false,
-      message: "Invalid or expired token"
+      message: "Invalid or expired token",
     });
   }
 };
 
-// 🛡️ Allow only admin
+// ===== Allow only admin =====
 const isAdmin = (req, res, next) => {
   if (req.user.role === "admin") {
     next();
   } else {
     return res.status(403).json({
       success: false,
-      message: "Access denied: Admin only"
+      message: "Access denied: Admin only",
     });
   }
 };
 
+// ===== Export everything =====
 module.exports = {
   validateSignup,
   validateLogin,
   authenticateUser,
-  isAdmin
+  isAdmin,
+  csrfProtection, // export CSRF middleware
 };
-
