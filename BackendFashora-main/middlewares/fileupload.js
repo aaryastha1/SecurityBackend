@@ -1,31 +1,48 @@
-const multer = require("multer")
-const { v4: uuidv4 } = require("uuid")
+const multer = require("multer");
+const { v4: uuidv4 } = require("uuid");
 
+// Storage config (same for all)
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, "uploads/"),
-    filename: (req, file, cb) => {
-        const ext = file.originalname.split(".").pop()
-        const filename = `${file.fieldname}-${uuidv4()}.${ext}`
-        cb(null, filename)
-    }
-})
-const fileFilter = (req, file, cb) => {
-    if (file.mimetype.startsWith("image")) cb(null, true)
-    else cb(new Error("Only image allowed"), false)
-}
-const upload = multer({
-    storage,
-    limits: { fileSize: 5 * 1024 * 1024 },// byte// optional
-    fileFilter // optional
-})
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) => {
+    const ext = file.originalname.split(".").pop();
+    const filename = `${file.fieldname}-${uuidv4()}.${ext}`;
+    cb(null, filename);
+  }
+});
+
+// File filter for profile images
+const profileImageFilter = (req, file, cb) => {
+  const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only JPEG, JPG, and PNG images are allowed for profile"), false);
+  }
+};
+
+// Generic file filter (any image)
+const genericImageFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith("image")) cb(null, true);
+  else cb(new Error("Only images are allowed"), false);
+};
+
+// Upload instances
+const uploadProfile = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: profileImageFilter
+});
+
+const uploadGeneric = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: genericImageFilter
+});
 
 module.exports = {
-    single: (fieldName) =>
-        upload.single(fieldName),
-    array: (fieldName, maxCount) =>
-        upload.array(
-            fieldName, maxCount
-        ),
-    fields: (fieldsArray) =>
-        upload.fields(fieldsArray)
-}
+  profile: (fieldName) => uploadProfile.single(fieldName),
+  single: (fieldName) => uploadGeneric.single(fieldName),
+  array: (fieldName, maxCount) => uploadGeneric.array(fieldName, maxCount),
+  fields: (fieldsArray) => uploadGeneric.fields(fieldsArray)
+};
