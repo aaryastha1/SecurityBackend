@@ -98,8 +98,7 @@ const csrf = require("csurf");
 
 
 // ===== CSRF Protection =====
-
-
+const csrfProtection = csrf({ cookie: true });
 
 // ===== Validation middlewares =====
 const validateSignup = (req, res, next) => {
