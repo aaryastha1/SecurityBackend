@@ -81,7 +81,7 @@ router.post("/login", validateLogin, loginUser);
 router.post("/verify-otp", verifyOTP);
 
 // Logout → YES CSRF
-router.post("/logout", csrfProtection, logoutUser);
+router.post("/logout", logoutUser);
 
 // Get profile (protected) → optional CSRF
 router.get("/me", authenticateUser, getProfile);
