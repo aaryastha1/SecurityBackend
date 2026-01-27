@@ -76,6 +76,9 @@ exports.registerUser = async (req, res) => {
 // ===== LOGIN =====
 exports.loginUser = async (req, res) => {
   const { email, password, captcha } = req.body;
+  const MAX_FAILED_ATTEMPTS = 5;
+  const LOCK_TIME = 15 * 60 * 1000; // 15 minutes
+  const PASSWORD_EXPIRY_DAYS = 90; // Password expires after 90 days
 
   if (!captcha)
     return res.status(400).json({ success: false, message: "Captcha is required" });
@@ -129,6 +132,15 @@ exports.loginUser = async (req, res) => {
       });
     }
 
+    // ✅ Check if password has expired
+    const passwordAge = Date.now() - user.passwordLastChanged;
+    if (passwordAge > PASSWORD_EXPIRY_DAYS * 24 * 60 * 60 * 1000) {
+      return res.status(403).json({
+        success: false,
+        message: "Your password has expired. Please reset your password to login.",
+      });
+    }
+
     // Password correct → reset counters
     user.failedLoginAttempts = 0;
     user.lockUntil = null;
@@ -156,6 +168,7 @@ exports.loginUser = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
 
 // ===== LOGOUT =====
 exports.logoutUser = async (req, res) => {
