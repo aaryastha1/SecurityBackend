@@ -1,6 +1,7 @@
 const multer = require("multer");
 const { v4: uuidv4 } = require("uuid");
 
+// Storage config (same for all)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, "uploads/"),
   filename: (req, file, cb) => {
@@ -10,7 +11,7 @@ const storage = multer.diskStorage({
   }
 });
 
-
+// File filter for profile images
 const profileImageFilter = (req, file, cb) => {
   const allowedTypes = ["image/jpeg", "image/jpg", "image/png"];
   if (allowedTypes.includes(file.mimetype)) {
@@ -26,7 +27,7 @@ const genericImageFilter = (req, file, cb) => {
   else cb(new Error("Only images are allowed"), false);
 };
 
-
+// Upload instances
 const uploadProfile = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
