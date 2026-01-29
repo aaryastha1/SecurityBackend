@@ -28,23 +28,6 @@
 
 
 
-// router.get("/", async (req, res) => {
-//   try {
-//     const orders = await Order.find()
-//       .sort({ createdAt: -1 })
-//       .populate("items.productId", "name image price");
-
-//     res.json(orders); // ✅ correct: sends an array directly
-//   } catch (err) {
-//     console.error("Error fetching orders:", err);
-//     res.status(500).json({ success: false, message: "Failed to fetch orders" });
-//   }
-// });
-
-
-
-// module.exports = router;
-
 
 
 const express = require("express");
