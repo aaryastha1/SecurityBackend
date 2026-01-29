@@ -1,31 +1,3 @@
-// const express = require("express");
-// const router = express.Router();
-// const Order = require("../../models/Order");
-
-// // POST /api/orders/place
-// router.post("/place", async (req, res) => {
-//   try {
-//     const { fullName, address, phone, paymentMethod, items } = req.body;
-
-//     const newOrder = new Order({
-//       fullName,
-//       address,
-//       phone,
-//       paymentMethod,
-//       items
-//     });
-
-//     const savedOrder = await newOrder.save();
-//     res.status(201).json(savedOrder);
-//   } catch (err) {
-//     console.error("Error placing order:", err);
-//     res.status(400).json({ success: false, message: err.message });
-//   }
-
-
-// });
-
-
 
 
 
